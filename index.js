@@ -23,67 +23,82 @@ const sessionRouter = require("./routers/session.router");
 const app = express();
 const server = http.createServer(app);
 
-// ✅ WebSocket with CORS allowed from all origins
-const io = socketIO(server, {
-	cors: {
-		origin: "*", // Allow all origins for WebSocket
-		methods: ["GET", "POST", "PUT", "DELETE"]
+const allowedOrigins = ["http://localhost:8081", "https://guruqool.vercel.app"];
+
+const corsOptions = {
+	origin: function (origin, callback) {
+		if (!origin || allowedOrigins.includes(origin)) {
+			callback(null, true);
+		} else {
+			callback(new Error("Not allowed by CORS"));
+		}
 	},
+	methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+	allowedHeaders: ["Content-Type", "Authorization"],
+	credentials: true,
+};
+
+app.use(cors(corsOptions));
+
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+
+// Limit repeated requests to public APIs
+app.use(rateLimit({ windowMs: 30 * 60 * 1000, max: 200 }));
+
+// Serve static files
+app.use("/uploads", express.static("./uploads"));
+app.use(express.static("public"));
+
+// Parse JSON and URL-encoded payloads
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
+// Set additional headers for preflight requests and Socket.IO fallback
+app.use((req, res, next) => {
+	res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
+	res.header("Access-Control-Allow-Credentials", "true");
+	res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+	res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+	next();
 });
 
-const PORT = process.env.PORT || 5000;
-
+// Razorpay setup
 const razorpay = new Razorpay({
 	key_id: process.env.RAZORPAY_KEY_ID,
 	key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
-// ✅ Allow all origins (CORS)
-const corsOptions = {
-	origin: "*", // Allow all origins (not recommended in production)
-	methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-	allowedHeaders: ["Content-Type", "Authorization"],
-};
-
-app.use(cors(corsOptions));
-app.options("*", cors(corsOptions)); // ✅ Preflight support for all routes
-
-// ✅ Security & Limits
-app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
-app.use(rateLimit({ windowMs: 30 * 60 * 1000, max: 200 }));
-
-// ✅ Static and Body Parsers
-app.use("/uploads", express.static("./uploads"));
-app.use(express.static("public"));
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-
-// ✅ Razorpay Order Creation
+// Create order endpoint
 app.post("/api/payment/create-order", async (req, res) => {
 	try {
 		const { amount } = req.body;
 
 		const options = {
-			amount: amount * 100,
+			amount: amount * 100, // Razorpay expects amount in paise
 			currency: "INR",
 			receipt: crypto.randomBytes(10).toString("hex"),
 		};
 
-		const order = await new Promise((resolve, reject) => {
-			razorpay.orders.create(options, (error, order) => {
-				if (error) reject(error);
-				else resolve(order);
-			});
-		});
-
+		const order = await razorpay.orders.create(options);
 		return res.status(200).json({ success: true, data: order });
 	} catch (error) {
+		console.error("Order creation error:", error);
 		return res.status(500).json({ success: false, message: "Internal Server Error!" });
 	}
 });
 
-// ✅ WebSocket Events
+// Setup Socket.IO with proper CORS
+const io = socketIO(server, {
+	cors: {
+		origin: allowedOrigins,
+		methods: ["GET", "POST", "PUT", "DELETE"],
+		credentials: true,
+	},
+});
+
 io.on("connection", (socket) => {
+	console.log("User connected:", socket.id);
+
 	socket.on("joinRoom", ({ chatId }) => {
 		socket.join(chatId);
 	});
@@ -96,10 +111,14 @@ io.on("connection", (socket) => {
 		};
 		socket.to(chatId).emit("receiveMessage", msgData);
 	});
+
+	socket.on("disconnect", () => {
+		console.log("User disconnected:", socket.id);
+	});
 });
 
-// ✅ API Routes
 app.get("/", (req, res) => res.send("Welcome to Gurukul API"));
+
 app.use("/api/auth", authRouter);
 app.use("/api/guru", guruRouter);
 app.use("/api/student", studentRouter);
@@ -109,7 +128,8 @@ app.use("/api/chat", chatRouter);
 app.use("/api/transaction", transactionRouter);
 app.use("/api/session", sessionRouter);
 
-// ✅ Server Start
+// Start server
+const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
 	console.log(`Server running on port ${PORT}`);
 	connectDB();
