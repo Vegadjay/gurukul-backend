@@ -42,18 +42,12 @@ app.use(cors(corsOptions));
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 
-// Limit repeated requests to public APIs
-app.use(rateLimit({ windowMs: 30 * 60 * 1000, max: 200 }));
-
-// Serve static files
 app.use("/uploads", express.static("./uploads"));
 app.use(express.static("public"));
 
-// Parse JSON and URL-encoded payloads
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Set additional headers for preflight requests and Socket.IO fallback
 app.use((req, res, next) => {
 	res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
 	res.header("Access-Control-Allow-Credentials", "true");
@@ -62,13 +56,11 @@ app.use((req, res, next) => {
 	next();
 });
 
-// Razorpay setup
 const razorpay = new Razorpay({
 	key_id: process.env.RAZORPAY_KEY_ID,
 	key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
-// Create order endpoint
 app.post("/api/payment/create-order", async (req, res) => {
 	try {
 		const { amount } = req.body;
@@ -87,7 +79,6 @@ app.post("/api/payment/create-order", async (req, res) => {
 	}
 });
 
-// Setup Socket.IO with proper CORS
 const io = socketIO(server, {
 	cors: {
 		origin: allowedOrigins,
@@ -97,7 +88,6 @@ const io = socketIO(server, {
 });
 
 io.on("connection", (socket) => {
-	console.log("User connected:", socket.id);
 
 	socket.on("joinRoom", ({ chatId }) => {
 		socket.join(chatId);
@@ -113,7 +103,6 @@ io.on("connection", (socket) => {
 	});
 
 	socket.on("disconnect", () => {
-		console.log("User disconnected:", socket.id);
 	});
 });
 

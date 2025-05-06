@@ -410,7 +410,6 @@ const getBookLesson = async (req, res) => {
 		}
 
 		const guruObjectId = guruId;
-		console.log("Guru Object ID:", guruObjectId);
 
 		if (!student.enrolledGurus.includes(guruObjectId)) {
 			student.enrolledGurus.push(guruObjectId);
