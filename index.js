@@ -22,9 +22,11 @@ const sessionRouter = require("./routers/session.router");
 
 const app = express();
 const server = http.createServer(app);
+
+// ✅ WebSocket with CORS allowed from all origins
 const io = socketIO(server, {
 	cors: {
-		origin: ["https://guruqool.vercel.app/"],
+		origin: "*", // Allow all origins for WebSocket
 		methods: ["GET", "POST", "PUT", "DELETE"]
 	},
 });
@@ -36,21 +38,27 @@ const razorpay = new Razorpay({
 	key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
+// ✅ Allow all origins (CORS)
 const corsOptions = {
-	origin: ["https://guruqool.vercel.app/"],
+	origin: "*", // Allow all origins (not recommended in production)
 	methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
 	allowedHeaders: ["Content-Type", "Authorization"],
-	credentials: true,
 };
 
 app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // ✅ Preflight support for all routes
+
+// ✅ Security & Limits
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(rateLimit({ windowMs: 30 * 60 * 1000, max: 200 }));
+
+// ✅ Static and Body Parsers
 app.use("/uploads", express.static("./uploads"));
 app.use(express.static("public"));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
+// ✅ Razorpay Order Creation
 app.post("/api/payment/create-order", async (req, res) => {
 	try {
 		const { amount } = req.body;
@@ -63,11 +71,8 @@ app.post("/api/payment/create-order", async (req, res) => {
 
 		const order = await new Promise((resolve, reject) => {
 			razorpay.orders.create(options, (error, order) => {
-				if (error) {
-					reject(error);
-				} else {
-					resolve(order);
-				}
+				if (error) reject(error);
+				else resolve(order);
 			});
 		});
 
@@ -77,8 +82,8 @@ app.post("/api/payment/create-order", async (req, res) => {
 	}
 });
 
+// ✅ WebSocket Events
 io.on("connection", (socket) => {
-
 	socket.on("joinRoom", ({ chatId }) => {
 		socket.join(chatId);
 	});
@@ -93,6 +98,7 @@ io.on("connection", (socket) => {
 	});
 });
 
+// ✅ API Routes
 app.get("/", (req, res) => res.send("Welcome to Gurukul API"));
 app.use("/api/auth", authRouter);
 app.use("/api/guru", guruRouter);
@@ -103,6 +109,7 @@ app.use("/api/chat", chatRouter);
 app.use("/api/transaction", transactionRouter);
 app.use("/api/session", sessionRouter);
 
+// ✅ Server Start
 server.listen(PORT, () => {
 	console.log(`Server running on port ${PORT}`);
 	connectDB();
